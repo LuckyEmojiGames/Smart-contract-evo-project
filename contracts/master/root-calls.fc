@@ -1,0 +1,52 @@
+#include "common-utils.fc";
+#include "sbt-utils.fc";
+#include "order-utils.fc";
+
+() handle_root_messages(int op, int query_id, int my_balance, int msg_value, slice in_msg_body) impure inline {
+
+    if (op == op::deploy_collection) {
+        deploy_collection(in_msg_body~load_ref(), in_msg_body~load_ref());  
+        return ();
+    }
+
+    if (op == op::create_admin) {
+        deploy_sbt(0, query_id, in_msg_body~load_uint(64), in_msg_body~load_coins(), in_msg_body~load_ref());
+        return ();
+    }
+
+    if (op == op::destroy_sbt) {
+        destroy_sbt(in_msg_body~load_msg_addr(), query_id);
+        return ();
+    }
+
+    if (op == op::revoke_sbt) {
+        revoke_sbt(in_msg_body~load_msg_addr(), query_id);
+        return ();
+    }
+    
+    if (op == op::withdraw_funds) {
+        int withdraw_amount = in_msg_body~load_coins();
+        throw_unless(407, my_balance + REQUIRED_TON_RESERVE > withdraw_amount);
+        messages::send_empty(withdraw_amount, storage::root_address, NORMAL);
+        return ();
+    }
+
+    if (op == op::edit_dapp_code) {
+        cell new_code = in_msg_body~load_ref();
+        set_code(new_code);
+        cont old_code = get_c3();
+        set_c3(new_code.begin_parse().bless());
+        throw(0);
+        return ();
+    }
+
+    if (op == op::change_root) {
+        load_data();
+        slice new_root = in_msg_body~load_msg_addr();
+        force_chain(new_root);
+        storage::root_address = new_root;
+        save_data();
+        return ();
+    }
+    throw(0xffff);
+}

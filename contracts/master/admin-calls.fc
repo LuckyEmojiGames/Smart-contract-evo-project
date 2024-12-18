@@ -1,0 +1,31 @@
+() handle_admin_messages(int query_id, int my_balance, int msg_value, slice in_msg_body) impure inline {
+    slice owner_addr = in_msg_body~load_msg_addr();
+    cell payload = in_msg_body~load_ref();
+    
+    int revoked_at = in_msg_body~load_uint(64);
+    throw_if(403, revoked_at > 0);
+
+    slice ps = payload.begin_parse();
+    int ps_op = ps~load_uint(32);
+
+    int order_id = ps~load_uint(64);
+    slice order_address = return_collection_addr_by_id(2).calculate_item_address(return_item_code_by_id(2), 0, order_id);
+    
+    if (ps_op == op::change_status_from_moderation_to_active) {
+        messages::send_simple(0, order_address, begin_cell().store_uint(ps_op, 32).store_uint(query_id, 64).end_cell(), CARRY_REMAINING_GAS);
+        return ();
+    }
+
+    if (ps_op == op::edit_content) {
+        cell content = ps~load_ref();
+        messages::send_simple(0, order_address, begin_cell().store_uint(ps_op, 32).store_uint(query_id, 64).store_ref(content).end_cell(), CARRY_REMAINING_GAS);
+        return ();
+    }
+
+    if (ps_op == op::arbitration_outcome) {
+
+        return ();
+    }
+    
+    throw(0xffff);
+}

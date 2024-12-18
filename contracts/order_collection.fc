@@ -1,0 +1,74 @@
+#pragma version >=0.4.0;
+#include "imports/stdlib.fc";
+#include "imports/messages.fc";
+#include "imports/op-codes.fc";
+#include "imports/params.fc";
+#include "imports/utils.fc";
+#include "order/collection-storage.fc";
+
+() recv_internal(cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) { ;; ignore empty messages
+        return ();
+    }
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+
+    if (flags & 1) { ;; ignore all bounced messages
+        return ();
+    }
+    slice sender_address = cs~load_msg_addr();
+
+    int op = in_msg_body~load_uint(32);
+    int query_id = in_msg_body~load_uint(64);
+
+    load_data();
+
+    if (op == op::get_royalty_params) {
+        send_royalty_params(sender_address, query_id, storage::royalty_params.begin_parse());
+        return ();
+    }
+
+    throw_unless(401, equal_slices(sender_address, storage::owner_address));
+
+    if (op == op::deploy_nft_item) { ;; deploy new nft
+
+        int item_index = in_msg_body~load_uint(64);
+        throw_unless(402, item_index <= storage::next_item_index);
+        var is_last = item_index == storage::next_item_index;
+        deploy_nft_item(item_index, storage::item_code, in_msg_body~load_coins(), in_msg_body~load_ref());
+        if (is_last) {
+            storage::next_item_index += 1;
+            store_data();
+        }
+        return ();
+    }
+
+    throw(0xffff);
+}
+
+(int, cell, slice) get_collection_data() method_id {
+  load_data();
+  slice cs = storage::content.begin_parse();
+  return (storage::next_item_index, cs~load_ref(), storage::owner_address);
+}
+
+slice get_nft_address_by_index(int index) method_id {
+  load_data();
+  cell state_init = calculate_nft_item_state_init(index, storage::item_code);
+  return calculate_nft_item_address(workchain, state_init);
+}
+
+(int, int, slice) royalty_params() method_id {
+  load_data();
+  slice rs = storage::royalty_params.begin_parse();
+  return (rs~load_uint(16), rs~load_uint(16), rs~load_msg_addr());
+}
+
+cell get_nft_content(int index, cell individual_nft_content) method_id {
+    return (
+        begin_cell()
+            .store_uint(0, 8) ;; offchain tag
+            .store_slice(individual_nft_content.begin_parse())
+        .end_cell()
+    );
+}
